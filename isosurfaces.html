@@ -1,0 +1,859 @@
+<html>
+
+<head>
+<title>Contouring Implicit Surfaces</title>
+</head>
+
+<body>
+<h1>
+Contouring Implicit Surfaces
+<br>
+Principles and Practice
+</h1>
+<h3>
+by Ronen Tzur <a href="mailto:rtzur@shani.net">(email)</a>.
+</h3>
+<br>
+<h2>
+Introduction
+</h2>
+The purpose of this article is to walk the reader through the process of contouring
+an implicitly-defined volume (often called an <i>implicit surface</i> or <i>isosurface</i>).
+This area of computer graphics has seen much research, and there are excellent introductory
+materials, both online and in print (see <a href="#bib_01">[1]</a>,
+<a href="#bib_02">[2]</a>, <a href="#bib_03">[3]</a>, <a href="#bib_04">[4]</a>).
+<p>
+A sample implementation is provided for two contouring algorithms:  the classic
+<i>Marching Cubes</i> and the newer <i>Dual Contouring</i>.
+<p>
+<a href="isosurf.zip">Download the zip file</b> containing this page and the sample
+implementation.</a>
+<p>
+<a href="isosurf-exe.zip">Download a zip file containing pre-compiled binaries.</a>
+<h2>
+Implicit Surfaces
+</h2>
+Implicit surfaces are volumes described by a field function <tt>d = f(x,y,z)</tt>
+where <tt>d</tt> can be throught of the density of the field at the point <tt>(x,y,z)</tt>.
+This function typically evaluates to the distance of the point from the contour of the
+volume, giving a negative non-zero result for points inside the volume, a positive non-zero
+result for points outside the volume, and a zero result for points lying exactly on the
+contour of the volume.
+<p>
+Consider the field function for a sphere.  It is
+<tt>f(x,y,z) = x<sup>2</sup> + y<sup>2</sup> + z<sup>2</sup> - R<sup>2</sup></tt>
+where <tt>R</tt> is the radius of the sphere.  For a point lying exactly on the contour of
+the sphere--that is, at a distance of <tt>R<sup>2</sup></tt> from its center--the function
+evaluates to zero.  For a point lying outside the sphere, at a distance that is greater than
+<tt>R<sup>2</sup></tt>, the function evaluates to a positive result.  And finally, for a
+point lying inside the sphere, the function evaluates to a negative result.
+<p>
+This representation of volumes in three-dimensional space is very compact and precise.
+To explicitly describe the sphere from the example above would require specifying a
+list of points and polygons that make up an approximation of the contour of a sphere.
+An implicit representation also allows for precise CSG (<i>constructive solid geometry</i>)
+operations to occur in the domain of the function.  To perform such an operation on an
+explicitly-represented contour would first require figuring out what the actual volume is.
+<p>
+Explicitly-represented contours can be rendered much faster than implicit volumes,
+as the polygons are already known and can be easily drawn on the screen, often by
+sending them to a graphics card that is designed to render polygons.  To render an
+implicit surface this way, however, it is first required to compute the polygonal
+approximation of its contour.
+<h2>
+Expressing Implicit Surfaces in the Sample Implementation
+</h2>
+The following sections will present two algorithms that approximate the contour
+of an implicit surface with polygons, and will go into details of my specific
+software implementation.  This implementation (for both algorithms) is tied very
+closely to how an implicit surface is actually described to the software.
+Therefore it is important that I first describe the classes that define an
+implicit surface.
+<p>
+An implicit surface is defined by a derivated of the class <tt>Isosurface</tt>
+(in files <tt>threed/isosurface.*</tt>).  This class is the interface for implementing
+the field function <tt>d = f(x,y,z)</tt> discussed above, by providing a pure virtual
+function <tt>Isosurface::fDensity</tt> that computes the field function. To gain better
+performance, <tt>fDensity</tt> can compute any number of points, starting at a point
+specified by three parameters <tt>(x0,y0,z0)</tt> and progressing towards the +z axis by
+a delta specified by the parameter <tt>dz</tt>.
+<p>
+As an example, an implementation of the field function of a sphere using <tt>Isosurface</tt>
+would look like this:
+<pre>
+class SphereIsosurface : public Isosurface
+{
+public:
+	SphereIsosurface(float rad) : _radius(rad)
+	{
+		Vector center;	// (0,0,0)
+		Vector v1 = center - _radius;
+		Vector v2 = center + _radius;
+		Isosurface::addBoundingBox(BoundingBox(v1, v2));
+	}
+
+	void SphereIsosurface::fDensity(
+		float x0, float y0, float z0,
+		float dz, int num_points, float *densities)
+	{
+		for (int i = 0; i < num_points; ++i) {
+			float sqr_dist = x0 * x0 + y0 * y0 + z0 * z0;
+			float sqr_rad = _radius * _radius;
+			float d = sqr_dist - sqr_rad;
+			densities[i] = d;
+
+			z0 += dz;
+		}
+	}
+
+protected:
+	float _radius;
+};
+</pre>
+<p>
+Note how the constructor of <tt>SphereIsosurface</tt> computes an axis-aligned
+bounding box containing the sphere and reports it using <tt>Isosurface::addBoundingBox</tt>.
+Generally speaking, it is not easy to figure out the bounding box just by looking at
+the field function.  A few algorithms have been proposed that address this problem,
+but they are not perfect:  for example, they may not work correctly when the
+field function describes volumes that are not connected.  (But see <a href="#bib_07">[7]</a>,
+<a href="#bib_08">[8]</a> for more information.)  In many cases <tt>Isosurface</tt> is
+derived to implement solid primitives, such as a sphere, a box, or a torus, whose bouding
+box can be easily computed.  Therefore I find it reasonable to expect the implementation
+of an <tt>Isosurface</tt> to report its own bounding box.
+<p>
+The implementation of <tt>Isosurface</tt> also permits transformation of the volume.
+The class <tt>Matrix</tt> (in files <tt>threed/matrix.*</tt>) implements an 4x4
+transformation matrix.  Such a matrix can cause any combination of translation,
+rotation, scaling and shearing operations to occur on a point (or an object made
+up of a collection of points) in 3D space.  The <tt>Matrix</tt> class is also
+compatible with the way OpenGL deals with matrices.  The class <tt>Transform</tt>
+(in files <tt>threed/transform.*</tt>), that inherits <tt>Matrix</tt> without adding
+any new data members, has a function <tt>Transform::glMultMatrix</tt> which is
+simply a wrapper around the OpenGL function <tt>glMultMatrixf</tt>.
+<p>
+A transformation matrix can be applied to the implicit surface using
+<tt>Isosurface::setTransform()</tt>.  Now consider a sphere of radius 1, that has been
+translated on the x axis and is now centered at (&#8209;5,0,0).  Evaluating the field
+function for the point at (0,0,0) should return a result indicating the point is outside
+the volume. In this case <tt>SphereIsosurface::fDensity()</tt> as presented above will
+evaluate to an incorrect result, as it does not take the translation into account.  But
+the definition can be easily revised to take any kind of transformation into account:
+<pre>
+	void SphereIsosurface::fDensity(
+		float x0, float y0, float z0,
+		float dz, int num_points, float *densities)
+	{
+		for (int i = 0; i < num_points; ++i) {
+			<b>float xt, yt, zt;
+			inverted_matrix.transform(x0, y0, z0, &xt, &yt, &zt);</b>
+
+			float sqr_dist = xt * xt + yt * yt + zt * zt;
+			float sqr_rad = _radius * _radius;
+			float d = sqr_dist - sqr_rad;
+			densities[i] = d;
+
+			z0 += dz;
+		}
+	}
+</pre>
+<p>
+The revised version first transforms the specified point given by <tt>(x0,y0,z0)</tt>
+by the inverted matrix of the transformation applied to the implicit surface.  When
+no transformation has been applied, the transformation matrix is the identity matrix,
+and so is its inverse, in effect resulting in <tt>xt=x0, yt=y0, zt=z0</tt>.  But to
+revisit the last example where a sphere is translated by (&#8209;5,0,0), the inverted
+matrix would translate the point by (+5,0,0), resulting in <tt>xt=(x0+5), yt=y0, zt=z0</tt>.
+Thus evaluating the field function at (0,0,0) would correctly return a result indicating
+the point is outside the volume, while evaluating the point at (-5,0,0) would correctly
+return a result indicating the point is inside the volume.
+<h2>
+Marching Cubes
+</h2>
+The Marching Cubes algorithm, published in 1987 <a href="#bib_04">[4]</a>, laid
+the foundation for the extraction of a polygonal approximation of an implicit surface.
+This algorithm divides the 3D space containing the volume into a grid of cubes.  Each cube
+is defined by the eight grid points that surround it, and the implicit function is evaluated
+for each of these eight grid points.  If the sign of all eight results is the same, the cube
+is entirely inside or entirely outside, the volume.  It is not interesecting the contour of
+the volume and therefore is not processed further.  Cubes that experience a sign change
+across their eight grid points do interesect the contour in some way.  Since there are two
+possible signs for each grid point (a negative sign for an interior point, and a positive
+sign for an exterior point), and eight grid points, there is a total of 2<sup>8</sup> = 256
+possible results for each cube.  The Marching Cubes algorithm specifies how to generate
+polygons for each of the 256 cases.
+<p>
+The following illustrations show a grid of size 5x5x3, and an outline of a single
+grid cube.
+<div align=center><img src="png/grid1.png" alt="Picture of Grid"></div>
+<div align=center><img src="png/grid2.png" alt="Picture of Grid"></div>
+<p>
+This is only an overview of Marching Cubes and far from a comprehensive description.  See
+<a href="#bib_03">[3]</a> for a much more in-depth discussion, including a sample
+implementation of the algorithm.  My own implemention is described in the following section.
+<h2>
+An Implementation of Marching Cubes
+</h2>
+My implementation of the Marching Cubes algorithm is the class <tt>IsoMesher_MC</tt>
+(in files <tt>threed/isomesher_mc.*</tt>).  This class is instantiated to polygonize a
+specific volume--an instance of <tt>Isosurface</tt> which is specified in the constructor
+of <tt>IsoMesher_MC</tt>.
+<p>
+The algorithm is implemented in function <tt>IsoMesher_MC::createMesh()</tt>, where first
+an axis-aligned bounding box is computed.  The bounding box is computed in the
+<tt>Isosurface</tt> itself by the function <tt>Isosurface::getBoundingBox()</tt> which
+takes into account any transformations applied on the implicit surface, and also computes
+the inverted transformation matrix for use by <tt>Isosurface::fDensity()</tt>.  Once the
+bounding box is known, the number of cubes it contains in each of the three axes x, y and
+z is computed by a simple division by the size of the cube:
+<pre>
+	xsize = ( boundingBox.vmax().x() - boundingBox.vmin().x() ) / cubeSize.x();
+	ysize = ( boundingBox.vmax().y() - boundingBox.vmin().y() ) / cubeSize.y();
+	zsize = ( boundingBox.vmax().z() - boundingBox.vmin().z() ) / cubeSize.z();
+</pre>
+<p>
+<tt>IsoMesher_MC::createMesh()</tt> examines the grid in rows.  A row is a slice of grid
+points (not voxels) all having the same y coordinate, and is made up of two two-dimensional
+arrays: <tt>points[xsize][zsize]</tt> which holds the (x,y,z) location of the grid point,
+and <tt>densities[xsize][zsize]</tt> which holds the result of invoking
+<tt>Isosurface::fDensity()</tt> on each of the points.  Two rows of grid points describe
+a single row of grid cubes, as each cube is bound by eight grid points.
+<p>
+Computing a row (as performed by <tt>IsoMesher_MC::computeRow()</tt>) means initializing
+the <tt>points[][]</tt> array and evaluating the field function for each point.  To
+accomplish this, <tt>computeRow()</tt> has to know the bottom left near coordinate
+of the row:  this is essentially the minimum coordinate of the bounding box,
+incremented along the y axis as the algorithm progresses throughout the rows.
+<pre>
+void IsoMesher_MC::computeRow(const Vector &vRow) {
+	float x0 = vRow.x();	// get the bottom left near
+	float y0 = vRow.y();	//    coordinate for the
+	float z0 = vRow.z();	//    current row of points
+	float dx = cubeSize.x();
+	float dz = cubeSize.z();
+
+	for (x = 0; x < xsize; ++x) {
+
+		// initialize the points structure
+		for (z = 0; z < zsize; ++z)
+			points[x][z] = Vector(x0 + x * dx,   y0,   z0 + z * dz);
+
+		// evaluate the points (x,y0,zmin) through (x,y0,zmax)
+		isosurface->fDensity(x0 + x * dx, y0, z0, dz, zsize, densities[x]);
+	}
+}
+</pre>
+<p>
+The function <tt>createMesh()</tt> uses <tt>computeRow()</tt> to compute the first grid
+row at the bottom of the grid, then starts a loop to process each of the subsequent rows
+from the next-to-bottom row towards the topmost row.  For each such subsequent row,
+it invokes <tt>computeRow()</tt> to compute it, then calls <tt>IsoMesher_MC::marchCubes()</tt>
+to examine the row of grid cubes bound by the two adjacent rows of grid points.
+<p>
+<tt>IsoMesher_MC::marchCubes()</tt> processes each cube in an x-major, z-minor order.
+That is, it marches over the x axis of the grid from left to right, and for each x
+coordinate it marches over the z axis from near to far.  Each cube is processed separately:
+no information that came to be known by processing one cube is needed for processing
+any other cube.  This means than an implementation of the Marching Cubes algorithm can be
+easily parallelized for multiprocessor environments.
+<p>
+For each cube, the results of the evaluation of the field function for the eight grid points
+at the corners of the cube are examined.  An 8-bit mask is initialized to zero, and each
+corner is associated with a specific bit position.  If the result of the field function for
+a corner is negative, that is, if the grid point is inside the volume, then the associated
+bit in the mask is set to 1.  This mask describes the relationship of the grid cube
+with the contour of the implicit surface.  The mask is all zeros (0x00) or all ones (0xFF)
+if the cube is entirely outside or entirely inside the volume, respectively.  Any other mask
+value indicates that some of the corners are inside the volume while others are outside it,
+and this means the cube intersects the contour in some way and polygons need to be generated.
+<p>
+A cube made of eight corners has 12-edges, any of which can interest the contour.  A special
+table, the <i>edge table</i>, which has 256 entries and is indexed by the bitmask,
+indicates, using a 12-bit mask, exactly which edges interesect the contour.  As each corner
+was associated with a bit position in the 8-bit mask, so each edge is associated with
+a bit position in the 12-bit mask.  Therefore the bit positions associated with each corner
+and each edge must be consistent with the values in the edge table.  My implementation uses
+an order similar (but not identical) to the one in <a href="#bib_03">[3]</a>.
+<p>
+<table>
+<tr><td>
+<pre>
+x,y,z denote the bottom left near
+corner of the cube being processed.
+
+corner 0 is at (x,   y,   z  )
+corner 1 is at (x+1, y,   z  )
+corner 2 is at (x+1, y+1, z  )
+corner 3 is at (x,   y+1, z  )
+corner 4 is at (x,   y,   z+1)
+corner 5 is at (x+1  y,   z+1)
+corner 6 is at (x+1, y+1, z+1)
+corner 7 is at (x,   y+1, z+1)
+
+edge 0  is between corners 0 and 1
+edge 1  is between corners 1 and 2
+edge 2  is between corners 2 and 3
+edge 3  is between corners 3 and 0
+edge 4  is between corners 4 and 5
+edge 5  is between corners 5 and 6
+edge 6  is between corners 6 and 7
+edge 7  is between corners 7 and 4
+edge 8  is between corners 0 and 4
+edge 9  is between corners 1 and 5
+edge 10 is between corners 2 and 6
+edge 11 is between corners 3 and 7
+</pre>
+</td><td>
+<img src="png/cube1.png" alt="Picture of Cube">
+</td></tr>
+</table>
+<p>
+The edge table indicates which edges intersect the contour, but the exact intersection
+point can lie anywhere on that edge.  For instance, if edge table indicates an intersection
+along edge 2, the exact intersection point lies somewhere on the horizontal line segment
+that has corners 2 and 3 as its endpoints.  There are numerous ways to determine the
+exact intersection point.  The most simplistic approach is to linearly interpolate the
+position using the results of the field function.  (Again, see <a href="#bib_03">[3]</a>.)
+While very easy to implement, linear interpolation assumes the field function is
+continuous.  While this may be true for a sphere, it is hardly the general case.  Consider
+the field function for a box:
+<pre>
+f(x,y,z) = max(x<sup>2</sup> - Rx<sup>2</sup>,  max(y<sup>2</sup> - Ry<sup>2</sup>, z<sup>2</sup> - Rz<sup>2</sup>))
+</pre>
+<p>
+Iterative evaluation of this function for points that are nearby each other generally returns
+a smooth progression of values, except at the corners of the box where the use of <tt>max</tt>
+causes an abrupt switch from one axis to another.  Another case is a volume that is the
+result of CSG operations on other volumes, which means it is composed of any number of
+independant field functions.  In these cases, employing linearly interpolation to compute
+the exact intersection point will yield incorrect results.
+<p>
+A far better choice for finding the exact intersection point is the midpoint (sometimes
+called bisection) algorithm for root solving. <a href="#bib_09">[9]</a>  According to the
+midpoint algorithm, the field function is evaluated for the middle point between the two
+endpoints, and the result is examined.  If the result is zero, the exact intersection point
+was found.  Otherwise, the midpoint replaces the endpoint for which the evaluation of
+the field function has the same sign, and the algorithm re-iterates.  In this way the
+midpoint algorithm iteratively halves the line segment until it finds the line segment whose
+middle point intersects the contour.
+<p>
+Another choice is the false position algorithm for root solving <a href="#bib_09">[9]</a>.
+It is a combination of both linear interpolation and the midpoint algorithm.  Unlike
+simple linear interpolation, false position finds the exact intersection point even
+if the field function is not continuous.  In terms of performance--the number of iterations
+made before finding the intersection point--it is no worse than the midpoint algorithm,
+and usually better. Thus it makes sense to use it as the algorithm of choice for finding the
+exact intersection point.
+<p>
+Both midpoint and false position algorithms are implemented by class <tt>IsoMesher</tt>
+(in files <tt>threed/isomesher.*</tt>) in the functions <tt>IsoMesher::intersect_xaxis()</tt>,
+<tt>IsoMesher::intersect_yaxis()</tt> and <tt>IsoMesher::intersect_zaxis()</tt>.  The
+<tt>_xaxis</tt> version should be used for finding the intersection point on edges 0, 2, 4
+and 6 that have fixed y,z coordinates.  The <tt>_yaxis</tt> version should be used on edges
+1, 3, 5, 7 that have fixed x,z coordinates.  And the <tt>_zaxis</tt> version should be used
+on edges 8, 9, 10, 11 that have fixed x,y coordinates.  The implementation is of the midpoint
+algorithm if the preprocessor symbol <tt>BISECTION</tt> is defined, or of the false position
+algorithm if the symbol <tt>FALSE_POSITION</tt> is defined.
+<p>
+An different approach to finding exact intersection points is presented in the Extending
+Marching Cubes algorithm <a href="#bib_12">[12]</a>.  EMC modifies the field function to
+return not one but three values, where each value measures the distance of the point from
+the contour of the implicit surface on a distinct axis.  It employs linear interpolation
+to compute the x coordinate of the exact intersection point using only the x component of
+the result of the field function.  Similarly it computes the y coordinate using only the
+y component, and the z coordinate using only the z component.
+<p>
+Once the intersection points are known, they can be connected to form polygons that
+approximate the contour.  The <i>triangle table</i>, which also has 256 entries and is
+indexed by the 8-bit mask similarly to how the edge table is indexed, specifies which
+intersection points to connect, and in what order, so that triangles may be formed.
+<p>
+Finding exact intersections points and connecting them to form triangles is accomplished
+by the function <tt>IsoMesher_MC::generateFaces()</tt>, which is invoked by
+<tt>IsoMesher_MC::marchCubes()</tt> for each cube that was found to intersect the
+contour in some way.  By the time all cubes have been marched through, a complete
+polygonal approximation of the contour has been generated, and the process is
+complete.
+<p>
+The example program <tt>demo1</tt> (in directory <tt>demos/</tt>) shows how to derive
+the <tt>Isosurface</tt> class to define implicit surfaces for a sphere and a box, and
+how to create a polygonal approximation of an implicit surface using <tt>IsoMesher_MC</tt>.
+This is a screenshot of <tt>demo1</tt> taken just after invoking it.
+<p>
+<div align=center><img src="png/demo1.png" alt="The First Demo"></div>
+<p>
+When the demo is running, the keyboard and mouse may used to examine the objects in the
+scene.  The gray cursor keys move the viewer around, as well as the gray plus and minus
+keys.  The numeric pad keys 4 and 6 rotate the viewer around the y axis.  Clicking the
+mouse on  the object selects it for manipulation.  The selected object may rotated using
+the keys  a,d,w,x,q,e, and may be scaled larger or smaller using the keys 1 and 2.
+<h2>
+No Sharp Features
+</h2>
+The screenshot of <tt>demo1</tt> shows that Marching Cubes approximates the red sphere
+object reasonably well, but produces poor approximations for the two orange box objects.
+The large box on the right misses its corners and edges.  The smaller box has been rotated
+and its approximation experiences far worse distortion.  It is easy to understand why
+this happens with a 2D simplification of how Marching Cubes work.
+<div align=center><img src="png/nocorners.png" alt="Missing Corners"></div>
+The bottom part of the illustration shows two cases of a grid cube that intersects the
+contour the same way.  Both cases produce the same 2D line (this would be a triangle in
+the 3D version of Marching Cubes).  In the case of a sphere approximated by triangles
+this, is a good result.  In the case of a box, the corner is entirely missed.
+<p>
+Another problem of Marching Cubes--and generally of any implicit surface approximation
+method that uses a uniform sampling resolution--is that details finer than the resolution
+of the grid are missed.  For instance, consider a box with a small hole carved in it.
+The polygonal approximation will not exhibit this hole if the hole falls entirely within
+one grid cube.  Approximation errors of this sort may typically be corrected by increasing
+the resolution of the sampling grid, at the cost of generating far more triangles.
+This cost can be lowered by using an adaptively-refined grid (or an octree, dividing 3D
+space into a number of grids of varying resolution) in place of a uniform grid.  Some work
+in this area is presented in <a href="#bib_05">[5]</a>, <a href="#bib_06">[6]</a>,
+<a href="#bib_10">[10]</a>, <a href="#bib_11">[11]</a>.
+<p>
+But as noted in <a href="#bib_12">[12]</a>, refining the sampling resolution (wheather
+uniformly or adaptively) cannot solve the problem of missing sharp features:  "In principle,
+we could reduce the approximation error of the surface S* extracted from the discretizied
+field f* by excessively refining the grid cells in the vicinity of the feature.  However,
+the normals of the extracted surface S* will never converge to the normals of S."
+<p>
+The Extended Marching Cubes algorithm presented in <a href="#bib_12">[12]</a> attempts to
+solve two problems of the classic algorithm.  The first is that of computing exact
+intersection points using linear interpolation, as described in the previous section.
+The second is that of approximating sharp edges and corners, by examining not only
+the exact intersection points, but also the normal vector at each point, and using the
+combination of both to estimate the location of the sharp corner or edge.
+<p>
+The normal vector is a vector perpendicular to some
+<a href="http://mathworld.wolfram.com/Plane.html">plane</a>.  In the context of an
+implicit surface, the normal vector of some point (x,y,z) in the volume can be
+approximated as the gradient of the field function in each of the three axes x, y, z.
+<pre>
+	nx = f(x + E, y,     z)     - f(x, y, z)
+	ny = f(x,     y + E, z)     - f(x, y, z)
+	nz = f(x,     y,     z + E) - f(x, y, z)</tt>
+</pre>
+<p>
+where E is some small epsilon (eg, 0.001).  A plane is defined by a point on
+the plane and the normal to that point:
+<pre>
+	n . p = 0
+</pre>
+(The dot <tt>.</tt> stands for
+<a href="http://mathworld.wolfram.com/DotProduct.html">dot product</a>.)
+<p>
+Consider the case of a grid cube containing the corner point of an implicit box
+surface.  There are three intersection points of the grid cube with the contour.  The
+classic Marching Cubes algorithm connects these points to form the triangle approximating
+the corner.  When the normal vector for each point is known, three planes can be computed.
+These three planes together form the corner point, and indeed the
+<a href="http://mathworld.wolfram.com/Plane-PlaneIntersection.html">intersection of
+three planes is a point</a>.
+<p>
+Given three points P1, P2, P3 and their respective normal vectors N1, N2, N3, solving
+the following system of linear equations finds the intersection point x.
+<pre>
+	N1 . (x - P1) = 0
+	N2 . (x - P2) = 0
+	N3 . (x - P3) = 0
+</pre>
+This system can be easily solved in matrix form as <tt>Ax = B</tt>:
+<pre>
+	[ P1 P1 P1 ]        [ N1 . P1 ]
+	[ P2 P2 P2 ]        [ N2 . P2 ]
+	[ P3 P3 P3 ]        [ N3 . P3 ]
+  	  matrix A            vector B
+</pre>
+<p>
+Now instead of a corner, consider the case of a sharp edge of an implicit box surface.
+In this case the grid cube will intersect the contour at four points, but these define
+only two planes.  These are the two planes that are on either side of the sharp edge.
+The intersection of two planes is a line, not a point.  In this case the linear system
+is underdetermined and cannot be solved.
+<p>
+To get around this problem, EMC approximates an exact intersection point using the
+quadric error function
+<pre>
+	E[x] = x - Ni . Pi
+</pre>
+<p>
+This is the least squares solution to the problem.  Put simply, the solution of the
+quadric error function <tt>E[x]</tt> is the point that is at the same distance from all
+planes involved.  The QEF is best solved using the
+<a href="http://mathworld.wolfram.com/SingularValueDecomposition.html">
+singular value decomposition</a> (also <a href="#bib_13">[13]</a>) of the matrix A
+from above into the matrices U, D and V, and solving
+<pre>
+U D V^T x = b
+</pre>
+<h2>
+Using Normals and QEFs in the Sample Implementation
+</h2>
+The class <tt>Isosurface</tt> has a pure virtual function <tt>Isosurface::fNormal()</tt>
+that is invoked by a polygonizer to compute the normal vector at some point (x,y,z).
+An implementation for <tt>SphereIsosurface</tt> would look like this.
+<pre>
+void SphereIsosurface::fNormal(
+	float x0, float y0, float z0,
+	float *nx, float *ny, float *nz)
+{
+	float xt, yt, zt;
+	inverted_matrix.transform(x0, y0, z0, &xt, &yt, &zt);
+
+	float sqr_dist = xt * xt + yt * yt + zt * zt;
+	float sqr_rad = _radius * _radius;
+	float d = sqr_dist - sqr_rad;
+
+	sqr_dist = (xt + 0.001f) * (xt + 0.001f) + yt * yt + zt * zt;
+	float nx1 = sqr_dist - sqr_rad;
+
+	sqr_dist = xt * xt + (yt + 0.001f) * (yt + 0.001f) + zt * zt;
+	float ny1 = sqr_dist - sqr_rad;
+
+	sqr_dist = xt * xt + yt * yt + (zt + 0.001f) * (zt + 0.001f);
+	float nz1 = sqr_dist - sqr_rad;
+
+	inverted_matrix.transformNormal(nx1, ny1, nz1, nx, ny, nz);
+
+	normalize_vector(nx, ny, nz);
+}
+</pre>
+Conceptually, the computation of a normal vector involves evaluating the field function
+four times.  Therefore the polygonizer can compute the normal vector without invoking
+<tt>Isosurface::fNormal()</tt>, by directly using <tt>Isosurface::fDensity()</tt>.
+However note that the gradient is computed after applying the inverted transformation to
+the point (x0,y0,z0).  To get the same result, the polygonizer would have to apply
+some transformation to the epsilon value 0.001f.  Thus it makes more sense, and is also
+better in terms of performance, to compute the normal in the class derived from
+<tt>Isosurface</tt>.
+<p>
+To compute the quadric error function, the polygonizer populates a matrix and a vector
+similar to the way for solving a linear system of equations as <tt>Ax = B</tt>.  It then
+invokes the static member function <tt>QEF::evaluate()</tt> to solve the system using
+singular value decomposition.
+<pre>
+double matrix_A[12][3];
+double vector_B[12];
+int rows = 0;
+
+for each intersection point {
+	// px,py,pz  is the intersection point
+	// nx,ny,nz  is the normal vector at that point
+
+	matrix_A[rows][0] = nx;
+	matrix_A[rows][1] = ny;
+	matrix_A[rows][2] = nz;
+
+	// compute dot product
+	vector_B[rows] = (double)(px * nx + py * ny + pz * nz);
+
+	++rows;
+}
+
+// solve Ax=B using singular value decomposition
+
+Vector newPoint;
+QEF::evaluate(matrix_A, vector_B, rows, &newPoint);
+</pre>
+<p>
+The class <tt>QEF</tt> (in files <tt>threed/qef.*</tt>) implements the entire process
+needed to solve a QEF as a black box usable through <tt>QEF::evalute()</tt>.  The
+source is documented by there is no practical need to describe the mathematics
+involved.  (The curious reader may refer to <a href="#bib_13">[13]</a> for detailed
+information.)
+<h2>
+Dual Contouring
+</h2>
+The novelty of Extended Marching Cubes is in the employing of QEFs to pin-point sharp
+features.  However, EMC has two drawbacks.  First, it needs to compute the angle between
+the normal vectors of the exact intersection points, to decide if a sharp feature exists.
+This can be easily computed as the dot product of two vectors is equal to the the cosine
+of the angle between them.  If this angle is smaller than some threshold, say 90 degrees,
+than a sharp feature exists.  EMC further needs to differentiate edges from corners in
+order to correctly solves a QEF.  (The reason for this being that in the case of an edge,
+the system of linear equations is underdetermined, as described above.)
+<p>
+The second drawback has to do with how EMC actually approximates the contour in grid
+cubes that contain sharp features.  The EMC solves the QEF to find point <tt>P</tt>.  It
+then creates a triangle fan connecting each pair of exact intersection points to the point
+<tt>P</tt>.  This works well for corners, but for sharp edges the point <tt>P</tt> is
+roughly the midpoint of the segment of the edge within the grid cube.  (See the
+illustration below.)  The result of this is what appears to be a series of small pyramids
+along the sharp edges.  Therefore EMC requires an additional step of edge flipping, to
+complete the approximation of the sharp feature.
+<div align=center><img src="png/emc-box.png" alt="Extended Marching Cubes"></div>
+<p>
+The Dual Contouring algorithm presented in <a href="#bib_14">[14]</a>,
+<a href="#bib_15">[15]</a> takes a different approach to using the QEF.  It solves the
+QEF for every grid cube that intersects the contour of the implicit surface, wheather
+that cube conains sharp features or not.  That new point <tt>P</tt> is assocated with
+the grid cubes.  It approximates the contour by quadrilaterals connecting the <tt>P</tt>
+points of four adjacent grid cubes sharing the grid cube edge where an intersection
+with the contour occurs.
+<div align=center><img src="png/dc-grid.png" alt="Dual Contouring"></div>
+<p>
+The grid is examined in a bottom-to-top, left-to-right, near-to-far sweeping motion.
+Therefore for each grid cube, only edges 5, 6, and 10 need to be examined to decide
+which four adjacent grid cubes participate in the generation of the quad polygon.
+(The number of edges is the same as with Marching Cubes.)  If the reason for only
+these three edges being important is not immediately clear, the following example
+should clarify the issue.
+<p>
+If the bottom, left, near grid cube, call it cube A at position (x,y,z), intersects the
+contour, it can only intersect it on edges 5, 6, or 10.  All other edges would definately
+be on the outside of the implicit surface.  If the intersetion is on edge 6, then the
+three other grid cubes sharing the edge are:
+<br>- cube B, immediately to the far side of cube A, at position (x,y,z+1)
+<br>- cube C, immediately to the above of cube A, at position (x,y+1,z)
+<br>- cube D, immediately to the above and far side of cube A, at position (x,y+1,z+1)
+<br>A quad is generated connecting the new points of each of the four adjacent cubes
+A, B, C, D.
+<p>
+As the algorithm sweeps near-to-far along the grid, the next grid cube to be processed is
+cube B.  It intersects the contour at least on its edge 2, since the grid cube to its near
+side (that is, cube A) intersects the contour on its edge 6.  Cube A's edge 6 is the same
+as cube B's edge 2.  But the quad connecting these two (and two other) grid cubes has
+already been generated during the processing of cube A.
+<p>
+This logic works the same way if cube A was interesecting the contour on edges 5 or 10.
+Therefore for any grid cube, examining any edge other than 5, 6, or 10, means re-doing
+work that was already done for a previous grid cube.
+<h2>
+An Implementation of Dual Contouring
+</h2>
+My implementation of the Dual Contouring algorithm is the class <tt>IsoMesher_DC</tt>
+(in files <tt>threed/isomesher_dc.*</tt>).  As the Dual Contouring algorithm is based
+on Marching Cubes and borrows some of its logic, so the class <tt>IsoMesher_DC</tt>
+works similarly to class <tt>IsoMesher_MC</tt> described above.
+<p>
+The first difference between the two polygonizers is that <tt>IsoMesher_DC</tt> works
+with three rows of grid points instead of only two as in <tt>IsoMesher_MC</tt>.  This
+is due to the fact that Dual Contouring connects four adjacent grid cubes into one
+quad, and if the intersection is on edges 6 or 10, two of the cubes will be from the
+row of grid cubes (not grid points) immediately above the row of grid cubes being
+processed.
+<p>
+<tt>IsoMesher_DC</tt> also has a notion of a cube structure, where <tt>IsoMesher_MC</tt>
+only knows about rows of grid points.  For a row of <tt>xsize</tt> by <tt>zsize</tt>
+points, there are <tt>(xsize - 1)</tt> by <tt>(zsize - 1)</tt> cubes.  Each cube
+structure keeps its 8-bit mask (same 8-bit mask as in Marching Cubes) and the coordinates
+computed for its new point.
+<p>
+The process of evaluating the field function (in <tt>IsoMesher_DC::computePoints()</tt>)
+is identical to that in <tt>IsoMesher_MC</tt>.  <tt>IsoMesher_DC::computeCubes()</tt>
+is similar to <tt>IsoMesher_MC::marchCubes()</tt> in that is examines the grid cube
+to see if it intersects the contour, but unlike the Marching Cubes version, it does not
+generate any polygons.  Instead, it calls <tt>IsoMesher_DC::generateVertex()</tt>
+to compute the new point, and stores it along with the 8-bit mask in the cube structure.
+<p>
+The process of computing the new point in <tt>IsoMesher_DC::generateVertex()</tt>
+is simply computing the exact intersection points as was done in Marching Cubes,
+and storing these points along with their normals in the matrix A and vector B described
+above for use with the QEF solver.  It then invokes <tt>QEF::evaluate()</tt> to compute
+the new point.  One thing to note is that it computes the <i>mass point</i>, the average
+point of all intersection points.  The point stored in the vector is really the
+intersection point minus the mass point.  And the mass point is added back into the
+result of the QEF to produce the new point that is stored in the cube structure.
+The use of the mass point is needed to guarantee that the computed point will lie
+within the grid cube even when the system of linear equations is underdetermined.
+<p>
+Once three rows of grid points and two rows of grid cubes have been computed, the
+next step is to generate quads, accomplished by <tt>IsoMesher_DC::generateQuads()</tt>.
+This function examines <tt>(xsize - 2)</tt> by <tt>(zsize - 2)</tt> grid cubes of
+the row of grid cubes.  Note that there is no need to examine the very last grid cube
+because it does not have any neighboring cubes that share its edges 5, 6 or 10.
+<tt>IsoMesher_DC::generateQuads()</tt> examines edges 5, 6, and 10 for each cube
+to see which three adjacent grid cubes to use for the generation of the quad.
+<p>
+Edges 5, 6 and 10 are used to pick the three adjacent grid cubes, but this is not
+enough to tell the ordering of vertices in the quad.  The ordering of vertices is
+reversed in these three cases:
+<br>- for edge 5, if corner 5 is inside the volume (as opposed to corner 6 being inside)
+<br>- for edge 6, if corner 7 is inside the volume (as opposed to corner 6 being inside)
+<br>- for edge 10, if corner 6 is inside the volume (as oppposed to corner 2 being inside)
+<p>
+This is only important when the graphics subsystem performs <i>backface culling</i> and
+skips the drawing of polygons that are not facing the viewer.  In this case examining the
+corners guarantees a closed polygonal approximation of the implicit surface.
+<p>
+The example program <tt>demo2</tt> (in directory <tt>demos/</tt>) renders the same
+image as <tt>demo1</tt> using <tt>IsoMesher_DC</tt>.  This is a screenshot of
+<tt>demo2</tt> taken just after invoking it, showing how well Dual Contouring performs
+for curved surfaces as well as those having sharp features.
+<p>
+<div align=center><img src="png/demo2.png" alt="The Second Demo"></div>
+<p>
+<h2>
+Constructive Solid Geometry
+</h2>
+As mentioned previously, constructive solid geometry can be applied to implicit surfaces
+in the domain of the field function.  The mesher that can generate a polygonal
+approximation of a volume need not care what surface the field function describes.
+It can be composed of conceptually a single object such as a sphere, or a multiple
+objects combined in any way.
+<p>
+In CSG there are generally three ways to combine solid object.  The <i>union</i>
+operation adds or merges any number of solid objects.  The <i>intersection</i> operation
+keeps only those parts of the objects that are overlapping.  The <i>difference</i>
+operation subtracts from the first object the union of all other objects.
+<p>
+The class <tt>CsgIsosurface</tt> (in files <tt>threed/csgisosurface.*</tt>) derives
+<tt>Isosurface</tt> to implement CSG operations.  An instance of CsgIsosurface performs
+a single CSG operation on its children.  The specific operation is set with a call
+to <tt>CsgIsosurface::setCsgMode()</tt> with a parameter of <tt>CSG_UNION</tt>,
+<tt>CSG_INTERSECTION</tt>, or <tt>CSG_DIFFERENCE</tt>.  Children are added one at a
+time using <tt>CsgIsosurface::addChild()</tt>.  The children are any derivative of
+<tt>Isosurface</tt> such as the <tt>SphereIsosurface</tt> or <tt>BoxIsosurface</tt>
+or even another instance of <tt>CsgIsosurface</tt>.
+<p>
+<tt>CsgIsosurface::fDensity()</tt> invokes <tt>Isosurface::fDensity()</tt> on each
+of the children of the <tt>CsgIsosurface</tt>.  But it has to return only one
+value from this set of values.  (Actually it has to store that value in the
+<tt>densities</tt> parameter.)  For a union operation, if a point is inside at
+least one implicit surface, it considered inside the combined volume.  Therefore
+the minimal value from set of values is selected.  For an intersection operation, all
+points must be inside, so the maximal value is selected.  For a difference operation,
+which is basically an intersection of the first object with the inverse of all
+other objects, all but the first value in the set are negated, and the maximal value
+of this new set is selected.
+<p>
+The example program <tt>demo3</tt> (in directory <tt>demos/</tt>) renders a sphere
+subtracted from a box using <tt>IsoMesher_DC</tt>.  This is a screenshot of
+<tt>demo3</tt> taken just after invoking it.
+<p>
+<div align=center><img src="png/demo3.png" alt="The Third Demo"></div>
+<p>
+Notice how the different materials merge at the edges of where the CSG operation
+occurs.  The polygonizer does not take materials into consideration, and this can
+lead to generation of polygons where the color drastically changes between vertices.
+To separate different colors (or materials) into distinct colors, it is necessary
+for the polygonizer to treat material changes in the implicit surface the same way
+as it does the change between inside and outside.
+<h2>
+Compiling the Samples
+</h2>
+There are sources in two directories, <tt>threed</tt> and <tt>demos</tt>.  You
+need to compile the stuff in <tt>threed</tt> first.  Compile each directory separately
+by changing into it and typing <tt>make</tt>.
+<p>
+To compile and run the samples, you need to have <a href="http://www.cygwin.com">cygwin</a>
+installed.  Make sure your installation of cygwin contains the OpenGL headers and
+libraries.  You additionally need the <a href="http://www.libsdl.org">SDL library</a>.
+<h2>
+Legal Stuff
+</h2>
+This article and the sample programs are Copyright (C) 2003-2004 by Ronen Tzur.
+<p>
+You may not reprint this article in any form, electronic or otherwise, without
+expressed consent from the author.
+<p>
+The source code of the sample implementation--that is, all files in the
+<tt>threed</tt> and <tt>demos</tt> directories contained in the zip archive--is hereby
+put in the public domain.  Do with it what you will.
+<p>
+THE AUTHOR MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE CODE FOR ANY
+PURPOSE. IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR IMPLIED WARRANTY OF ANY KIND. THE AUTHOR
+DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOURCE CODE, INCLUDING ALL IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL THE AUTHOR BE
+LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOURCE CODE.
+<p>
+Have a nice day.
+<p>
+<p>
+<a name="#bib">
+<h2>
+References
+</h2>
+<a name="#bib_01">
+[1] Bloomenthal J. et al,
+	<i>Introduction to Implicit Surfaces</i>,
+	Morgan-Kaufmann Publishers, 1997
+<p>
+<a name="#bib_02">
+[2] Bloomenthal J.,
+	<a href="http://citeseer.nj.nec.com/bloomenthal88polygonization.html">
+	<i>Polygonization of Implicit Surfaces</i></a>,
+	Computer Aided Geometric Design 5, pp 341-356, 1988
+<p>
+<a name="#bib_03">
+[3] Burke P.,
+	<a href="http://astronomy.swin.edu.au/~pbourke/modelling/polygonise/">
+	<i>Polygonising a scalar field</i>
+	(http://astronomy.swin.edu.au/~pbourke/modelling/polygonise/)</a>,
+	May 1997
+<p>
+<a name="#bib_04">
+[4] Lorensen W. and Cline H.,
+	<i>Marching Cubes: a high resolution 3D surface construction algorithm</i>,
+	Computer Graphics (SIGGRAPH 87 Proceedings), pp 163-169, 1987
+<p>
+<a name="#bib_05">
+[5] Hall, M. and Warren, J.,
+	<i>Adaptive Polygonalization of Implicitly Defined Surfaces</i>,
+	IEEE Computer Graphics and Applications, pp 33-42, 1990
+<p>
+<a name="#bib_06">
+[6] Cignoni, P. et al,
+	<a href="http://citeseer.nj.nec.com/cignoni00reconstruction.html">
+	<i>Reconstruction of Topologically Correct and Adaptive Trilinear Isosurfaces</i></a>,
+	Computer & Graphics, Vol 24 no 3, pp 399-418, 2000
+<p>
+<a name="#bib_07">
+[7] Witkin A. and Heckbert, P.,
+	<a href="http://citeseer.nj.nec.com/witkin94using.html">
+	<i>Using Particles to Sample and Control Implicit Surfaces</i></a>,
+	Computer Graphics (SIGGRAPH 94 Proceedings), pp 269-278, July 1994
+<p>
+<a name="#bib_08">
+[8] Akkouche S. and Galin E.,
+	<a href="http://liris.cnrs.fr/~egalin/Web/Articles/index.html">
+	<i>Adaptive Implicit Surface Polygonization Using Marching Triangles</i></a>,
+	Computer Graphics Forum, Vol 20 no 2, pp 67-80, June 2001.
+<p>
+<a name="#bib_09">
+[9] Pitman, B.
+	<a href="http://www.math.buffalo.edu/~pitman/courses/mth437/na/na.html">
+	<i>Introduction to Numerical Analysis</i>
+	(http://www.math.buffalo.edu/~pitman/courses/mth437/na/na.html)</a>
+<p>
+<a name="#bib_10">
+[10] Velho, L.
+	<a href="http://citeseer.nj.nec.com/velho96simple.html">
+	<i>Simple and Efficient Polygonization of Implicit Surfaces</i></a>,
+	Journal of Graphics Tools, Vol 1 no 2, pp 5-24, February 1996
+<p>
+<a name="#bib_11">
+[11] Livnat, Y. et al,
+	<a href="http://citeseer.nj.nec.com/livnat96near.html">
+	<i>A Near Optimal Isosurface Extraction Algorithm Using The Span Space</i></a>,
+	IEEE Transactions on Visualization and Computer Graphics, 1996
+<p>
+<a name="#bib_12">
+[12] Kobbelt, L. et al,
+	<a href="http://citeseer.nj.nec.com/454093.html">
+	<i>Feature Sensitive Surface Extraction from Volume Data</i></a>,
+	SIGGRAPH 2001, Computer Graphics Proceedings, Annual Conference Series, pp 57-66, 2001
+<p>
+<a name="#bib_13">
+[13] Golub, G. and Van Loan, C.,
+	<i>Matrix Computations, 3rd ed.</i>,
+	Baltimore, MD: Johns Hopkins University Press, pp. 70-71 and 73, 1996
+<p>
+<a name="#bib_14">
+[14] Ju, T. et al,
+	<a href="http://citeseer.nj.nec.com/536626.html">
+	<i>Dual Contouring of Hermite Data</i></a>,
+	ACM Transactions on Computer Graphics (SIGGRAPH 2002 Proceedings), pp 339-346, 2002
+<p>
+<a name="#bib_155">
+[15] Schaefer S. and Warren J.
+	<a href="http://citeseer.nj.nec.com/569936.html">
+	<i>Dual Contouring: The Secret Sauce</i></a>
+
+</body>
+
+</html>
