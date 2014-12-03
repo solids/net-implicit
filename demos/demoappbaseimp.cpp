@@ -58,44 +58,44 @@ bool DemoAppBaseImp::doKeyEvent()
     Vector meshRotationVector;
     Vector meshScaleVector;
 
-    if (io().keyPressed(SDLK_LEFT))
+    if (io().keyPressed(SDL_SCANCODE_LEFT))
         cameraTranslationVector = Vector(+0.05f, 0, 0);
-    else if (io().keyPressed(SDLK_RIGHT))
+    else if (io().keyPressed(SDL_SCANCODE_RIGHT))
         cameraTranslationVector = Vector(-0.05f, 0, 0);
-    else if (io().keyPressed(SDLK_UP))
+    else if (io().keyPressed(SDL_SCANCODE_UP))
         cameraTranslationVector = Vector(0, -0.05f, 0);
-    else if (io().keyPressed(SDLK_DOWN))
+    else if (io().keyPressed(SDL_SCANCODE_DOWN))
         cameraTranslationVector = Vector(0, +0.05f, 0);
 
-    else if (io().keyPressed(SDLK_KP_MINUS))
+    else if (io().keyPressed(SDL_SCANCODE_KP_MINUS))
         cameraTranslationVector = Vector(0, 0, -0.05f);
-    else if (io().keyPressed(SDLK_KP_PLUS))
+    else if (io().keyPressed(SDL_SCANCODE_KP_PLUS))
         cameraTranslationVector = Vector(0, 0, +0.05f);
 
-    else if (io().keyPressed(SDLK_KP4))
+    else if (io().keyPressed(SDL_SCANCODE_KP_4))
         cameraRotationVector = Vector(0, -0.05f, 0);
-    else if (io().keyPressed(SDLK_KP6))
+    else if (io().keyPressed(SDL_SCANCODE_KP_6))
         cameraRotationVector = Vector(0, +0.05f, 0);
 
-    else if (io().keyPressed(SDLK_a))
+    else if (io().keyPressed(SDL_SCANCODE_A))
         meshRotationVector = Vector(0, -0.5f, 0);
-    else if (io().keyPressed(SDLK_d))
+    else if (io().keyPressed(SDL_SCANCODE_D))
         meshRotationVector = Vector(0, 0.5f, 0);
-    else if (io().keyPressed(SDLK_w))
+    else if (io().keyPressed(SDL_SCANCODE_W))
         meshRotationVector = Vector(-0.5f, 0, 0);
-    else if (io().keyPressed(SDLK_x))
+    else if (io().keyPressed(SDL_SCANCODE_X))
         meshRotationVector = Vector(+0.5f, 0, 0);
-    else if (io().keyPressed(SDLK_q))
+    else if (io().keyPressed(SDL_SCANCODE_Q))
         meshRotationVector = Vector(0, 0, -0.5f);
-    else if (io().keyPressed(SDLK_e))
+    else if (io().keyPressed(SDL_SCANCODE_E))
         meshRotationVector = Vector(0, 0, +0.5f);
 
-    else if (io().keyPressed(SDLK_1))
+    else if (io().keyPressed(SDL_SCANCODE_1))
         meshScaleVector = Vector(1.1f, 1.1f, 1.1f);
-    else if (io().keyPressed(SDLK_2))
+    else if (io().keyPressed(SDL_SCANCODE_2))
         meshScaleVector = Vector(0.9f, 0.9f, 0.9f);
 
-    else if (io().keyPressed(SDLK_ESCAPE))
+    else if (io().keyPressed(SDL_SCANCODE_ESCAPE))
         return false;
 
     if (selectedLink) {

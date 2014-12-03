@@ -5,8 +5,9 @@
 #ifndef _DEMOIO_H
 #define _DEMOIO_H
 
-#include <SDL/SDL_keysym.h>
-#include <SDL/SDL_mouse.h>
+// #include <SDL2/SDL_keysym.h>
+#include <SDL2/SDL_scancode.h>
+#include <SDL2/SDL_mouse.h>
 
 
 class DemoIO
@@ -65,7 +66,7 @@ public:
     /**
      * @return true if the @p key is currently held
      */
-    bool keyPressed(SDLKey key) const;
+    bool keyPressed(SDL_Scancode key) const;
 
     /**
      * @return true if the @p button is currently held
@@ -90,10 +91,12 @@ protected:
     bool _entered;
     bool _paused;
     int _width, _height;
-    int _heldKeys[(SDLK_LAST + 1) / sizeof(int)];
+    int _heldKeys[(SDL_NUM_SCANCODES + 1) / sizeof(int)];
     
     bool _heldButtons[3];
     int _mouseX, _mouseY;
+    SDL_Window *_surface;
+    SDL_GLContext _glcontext;
 };
 
 #endif // _DEMOIO_H

@@ -1,3 +1,5 @@
+install sdl2
+
 ```
 cd threed/
 make

@@ -5,8 +5,8 @@
 #include "demoio.h"
 #include <threed/opengl.h>
 #include <OpenGL/glu.h>
-#include <SDL/SDL.h>
-#include <SDL/SDL_opengl.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
 #include <memory.h>
 #include <iostream>
 
@@ -49,8 +49,21 @@ void DemoIO::enter()
         return;
     }
 
-    const SDL_VideoInfo *info = SDL_GetVideoInfo();
-    if (!info) {
+    int num_ren = SDL_GetNumRenderDrivers();
+    std::cout << num_ren << " Render Drivers Found!" << std::endl;
+    
+    SDL_RendererInfo info;
+    for (int i = 0; i < num_ren; i++) {
+      SDL_GetRenderDriverInfo(i, &info);
+      std::cout << "RENDERER #"<<i<<": "<<info.name<<std::endl;
+      if (info.flags & SDL_RENDERER_SOFTWARE) std::cout << "--> SOFTWARE"<<std::endl;
+      if (info.flags & SDL_RENDERER_ACCELERATED) std::cout << "--> ACCELERATED"<<std::endl;
+      if (info.flags & SDL_RENDERER_PRESENTVSYNC) std::cout << "--> VSYNC"<<std::endl;
+      if (info.flags & SDL_RENDERER_TARGETTEXTURE) std::cout << "--> TEXTURE"<<std::endl;
+      std::cout<<std::endl;
+    }
+
+    if (num_ren < 1) {
         throw SDL_GetError();
         return;
     }
@@ -61,12 +74,18 @@ void DemoIO::enter()
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, /* bpp */ 32);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-    int flags = SDL_OPENGL /*| SDL_FULLSCREEN*/;
-    SDL_Surface *surface = SDL_SetVideoMode(_width, _height, 32, flags);
-    if (!surface) {
+    _surface = SDL_CreateWindow("Implicit surface meshing demo",
+                          SDL_WINDOWPOS_UNDEFINED,
+                          SDL_WINDOWPOS_UNDEFINED,
+                          _width, _height,
+                          /* SDL_WINDOW_FULLSCREEN | */ SDL_WINDOW_OPENGL);
+
+    if (!_surface) {
         throw SDL_GetError();
         return;
     }
+
+    _glcontext = SDL_GL_CreateContext(_surface);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -101,6 +120,7 @@ void DemoIO::leave()
         SDL_Quit();
         _entered = false;
         _paused = false;
+        SDL_GL_DeleteContext(_glcontext); 
     }
 }
 
@@ -121,7 +141,7 @@ void DemoIO::resume()
 
 void DemoIO::flipFrame(bool clear)
 {
-    SDL_GL_SwapBuffers();
+    SDL_GL_SwapWindow(_surface);
     if (clear)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
@@ -139,7 +159,8 @@ bool DemoIO::doEvents()
 
         if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
             std::cout << "event.type" << "SDL_KEYDOWN" << std::endl;
-            int index = (int)event.key.keysym.sym;
+            // int index = (int)event.key.keysym.sym;
+            int index = (int)event.key.keysym.scancode;
             int byteOffset = index / sizeof(int);
             int bitOffset = index - byteOffset * sizeof(int);
             _heldKeys[byteOffset] = (_heldKeys[byteOffset] & ~(1 << bitOffset)) |
@@ -163,7 +184,7 @@ bool DemoIO::doEvents()
 
 //----------------------------------------------------------------------------
 
-bool DemoIO::keyPressed(SDLKey key) const
+bool DemoIO::keyPressed(SDL_Scancode key) const
 {
     int index = (int)key;
     int byteOffset = index / sizeof(int);

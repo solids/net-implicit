@@ -1,4 +1,4 @@
-LIBSDL = -L/usr/local/lib -lSDL
+LIBSDL = -L/usr/local/lib -lSDL2
 LIBGL  = -framework GLUT -framework OpenGL
 LIBS = -L../threed -lthreed -lstdc++ $(LIBSDL) $(LIBGL)
 
