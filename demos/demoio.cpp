@@ -8,6 +8,7 @@
 #include <SDL/SDL.h>
 #include <SDL/SDL_opengl.h>
 #include <memory.h>
+#include <iostream>
 
 //----------------------------------------------------------------------------
 
@@ -15,8 +16,8 @@ DemoIO::DemoIO()
 {
     _entered = false;
     _paused = false;
-    _width = 320;
-    _height = 240;
+    _width = 1024;
+    _height = 768;
     memset(_heldKeys, 0, sizeof(_heldKeys));
     memset(_heldButtons, 0,sizeof(_heldButtons));
     _mouseX = _mouseY = 0;
@@ -89,7 +90,7 @@ void DemoIO::enter()
     glEnable(GL_COLOR_MATERIAL);
     glLightModelf(GL_LIGHT_MODEL_LOCAL_VIEWER, 1.0f);
 
-    //glPolygonMode(GL_FRONT, GL_LINE);
+    glPolygonMode(GL_FRONT, GL_LINE);
 }
 
 //----------------------------------------------------------------------------
@@ -130,11 +131,14 @@ void DemoIO::flipFrame(bool clear)
 bool DemoIO::doEvents()
 {
     SDL_Event event;
-    if (SDL_PollEvent(&event)) {
+    while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT)
             return false;
 
+        printf("event.type: %d\n", event.type);
+
         if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
+            std::cout << "event.type" << "SDL_KEYDOWN" << std::endl;
             int index = (int)event.key.keysym.sym;
             int byteOffset = index / sizeof(int);
             int bitOffset = index - byteOffset * sizeof(int);
@@ -143,6 +147,7 @@ bool DemoIO::doEvents()
         }
 
         if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
+            std::cout << "event.type" << "SDL_MOUSEBUTTONDOWN" << std::endl;
             _mouseX = (int)event.button.x;
             _mouseY = (int)event.button.y;
             if (event.button.button >= SDL_BUTTON_LEFT &&

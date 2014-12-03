@@ -10,7 +10,7 @@ using namespace ThreeD;
 
 //----------------------------------------------------------------------------
 
-#define CSG_VOXEL_SIZE   Vector(0.4f, 0.4f, 0.4f)
+#define CSG_VOXEL_SIZE   Vector(0.1f, 0.1f, 0.1f)
 
 //----------------------------------------------------------------------------
 
@@ -31,7 +31,7 @@ bool Demo1::initDemo()
 {
     // build a sphere with radius = 1.0
 
-    Isosurface *sphereIso = new SphereIsosurface(1.0f);
+    Isosurface *sphereIso = new SphereIsosurface(1.8f);
 
     Transform sphereTrans;
     sphereTrans.translate(Vector(0.0f, -0.5f, -3.0f));
@@ -40,7 +40,6 @@ bool Demo1::initDemo()
     // build a box of size (3,4,6)
 
     Isosurface *boxIso = new BoxIsosurface(Vector(3.0f, 4.0f, 6.0f));
-    Transform boxTrans;
 
     // subtract the sphere from the box
 
@@ -49,8 +48,16 @@ bool Demo1::initDemo()
     csgIso->addChild(boxIso);
     csgIso->addChild(sphereIso);
 
+    Isosurface *boxIso2 = new BoxIsosurface(Vector(1.0f, 1.0f, 1.0f));
+    Transform boxTrans;
+    boxTrans.translate(Vector(-1.0f, -2.1f, 0.4f));
+    boxTrans.rotate(Vector(0.5f, 0.90f, 0.45f));
+    boxIso2->setTransform(boxTrans);
+    csgIso->addChild(boxIso2);
+
     Transform csgTrans;
-    csgTrans.translate(Vector(2.0f, 0.0f, 0.0f));
+    csgTrans.rotate(Vector(1.0f, 0.90f, 0.20f));
+    csgTrans.translate(Vector(0.1f, 0.1f, 0.0f));
     csgIso->setTransform(csgTrans);
 
     // polygonize

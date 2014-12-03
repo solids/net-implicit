@@ -3,6 +3,7 @@
 //----------------------------------------------------------------------------
 
 #include "demoappbaseimp.h"
+#include <iostream>
 
 using namespace ThreeD;
 
@@ -36,15 +37,16 @@ bool DemoAppBaseImp::doEvent()
 
 void DemoAppBaseImp::doMouseEvent()
 {
-    if (io().buttonPressed(SDL_BUTTON_LEFT))
-        leftButtonPressed = true;
+    if (io().buttonPressed(SDL_BUTTON_LEFT)) {
+      leftButtonPressed = true;
+    }
     if (leftButtonPressed && !io().buttonPressed(SDL_BUTTON_LEFT)) {
         leftButtonPressed = false;
-        if (selectedLink)
-            selectedLink->object()->highlight(Color());
-        selectedLink = camera->getSelection(io().mouseX(), io().mouseY());
-        if (selectedLink)
-            selectedLink->object()->highlight(Color(50.0f, 50.0f, 50.0f));
+//        if (selectedLink)
+//            selectedLink->object()->highlight(Color());
+//        selectedLink = camera->getSelection(io().mouseX(), io().mouseY());
+//        if (selectedLink)
+//            selectedLink->object()->highlight(Color(50.0f, 50.0f, 50.0f));
     }
 }
 
