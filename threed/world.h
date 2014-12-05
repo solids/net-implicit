@@ -5,7 +5,7 @@
 #ifndef _THREED_WORLD_H
 #define _THREED_WORLD_H
 
-#pragma warning(disable: 4786)  // name truncated to 255 chars
+//#pragma warning(disable: 4786)  // name truncated to 255 chars
 
 #include <threed/object.h>
 #include <threed/transform.h>
@@ -14,23 +14,22 @@
 
 namespace ThreeD {
 
-
 class WorldLink : public Transform
 {
 public:
     WorldLink(Object *obj, const Vector &loc)
         : Transform(), _obj(obj), _location(loc)
-        {};
+        { };
     
     Object *object() const { return _obj; }
 
     inline void draw();
+    int id;
         
 protected:
     Object *_obj;
     Vector _location;
 };
-
 
 
 /**
@@ -126,6 +125,11 @@ public:
      * Get object at (X,Y)
      */
     WorldLink *getSelection(int x, int y);
+
+    /**
+     * Search for a WorldLink given a gl name stack id
+     */
+    WorldLink *findLink (int id);
     
 protected:
     //

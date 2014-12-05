@@ -11,6 +11,8 @@
 
 using namespace ThreeD;
 
+int largestId = 0;
+
 //----------------------------------------------------------------------------
 
 void WorldLink::draw()
@@ -56,6 +58,7 @@ WorldLink *World::attach(Object *obj)
     Vector loc1 = obj->centralize();
     Vector loc(loc1.x(), loc1.y(), -loc1.z());
     WorldLink *link = new WorldLink(obj, loc);
+    link->id = ++largestId;
     _links.push_back(link);
     return link;
 }
@@ -140,7 +143,7 @@ void World::draw()
         WorldLink *link = (*it);
         ++it;
         if (_inSelection)
-            glLoadName((intptr_t)link);
+            glLoadName(link->id);
         glLoadMatrixd(cameraMatrix);
         link->draw();
     }
@@ -160,6 +163,17 @@ double World::getBoundingRadius()
 }
 
 //----------------------------------------------------------------------------
+
+WorldLink *World::findLink (int id) {
+  std::list<WorldLink *>::iterator it = _links.begin();
+  while (it != _links.end()) {
+    WorldLink *link = (*it);
+    ++it;
+    if (id == link->id) {
+      return link;
+    }
+  }
+}
 
 WorldLink *World::getSelection(int x, int y)
 {
@@ -196,7 +210,7 @@ WorldLink *World::getSelection(int x, int y)
         int numelems = output_ptr[0];
         if (output_ptr[1] < zMin) {     // minimum depth for hit
             zMin = output_ptr[1];
-            hitLink = (WorldLink *)output_ptr[3];
+            hitLink = findLink(output_ptr[3]);
         }
         if (output_ptr[2] > zMax)       // maximum depth for hit
             zMax = output_ptr[2];

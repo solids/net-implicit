@@ -6,7 +6,7 @@
 #include <iostream>
 
 using namespace ThreeD;
-
+using namespace std;
 
 bool DemoAppBaseImp::init()
 {
@@ -42,11 +42,11 @@ void DemoAppBaseImp::doMouseEvent()
     }
     if (leftButtonPressed && !io().buttonPressed(SDL_BUTTON_LEFT)) {
         leftButtonPressed = false;
-//        if (selectedLink)
-//            selectedLink->object()->highlight(Color());
-//        selectedLink = camera->getSelection(io().mouseX(), io().mouseY());
-//        if (selectedLink)
-//            selectedLink->object()->highlight(Color(50.0f, 50.0f, 50.0f));
+        if (selectedLink)
+          selectedLink->object()->highlight(Color());
+        selectedLink = camera->getSelection(io().mouseX(), io().mouseY());
+        if (selectedLink)
+          selectedLink->object()->highlight(Color(50.0f, 50.0f, 50.0f));
     }
 }
 
@@ -67,14 +67,14 @@ bool DemoAppBaseImp::doKeyEvent()
     else if (io().keyPressed(SDL_SCANCODE_DOWN))
         cameraTranslationVector = Vector(0, +0.05f, 0);
 
-    else if (io().keyPressed(SDL_SCANCODE_KP_MINUS))
-        cameraTranslationVector = Vector(0, 0, -0.05f);
-    else if (io().keyPressed(SDL_SCANCODE_KP_PLUS))
+    else if (io().keyPressed(SDL_SCANCODE_K))
+        cameraTranslationVector = Vector(0, 0, -0.05f);      
+    else if (io().keyPressed(SDL_SCANCODE_L))
         cameraTranslationVector = Vector(0, 0, +0.05f);
 
-    else if (io().keyPressed(SDL_SCANCODE_KP_4))
+    else if (io().keyPressed(SDL_SCANCODE_M))
         cameraRotationVector = Vector(0, -0.05f, 0);
-    else if (io().keyPressed(SDL_SCANCODE_KP_6))
+    else if (io().keyPressed(SDL_SCANCODE_N))
         cameraRotationVector = Vector(0, +0.05f, 0);
 
     else if (io().keyPressed(SDL_SCANCODE_A))

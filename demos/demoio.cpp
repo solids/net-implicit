@@ -109,7 +109,7 @@ void DemoIO::enter()
     glEnable(GL_COLOR_MATERIAL);
     glLightModelf(GL_LIGHT_MODEL_LOCAL_VIEWER, 1.0f);
 
-    glPolygonMode(GL_FRONT, GL_LINE);
+//    glPolygonMode(GL_FRONT, GL_LINE);
 }
 
 //----------------------------------------------------------------------------
